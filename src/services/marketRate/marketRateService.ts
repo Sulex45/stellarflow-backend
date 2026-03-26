@@ -23,9 +23,11 @@ export class MarketRateService {
   private initializeFetchers(): void {
     const kesFetcher = new KESRateFetcher();
     const ghsFetcher = new GHSRateFetcher();
+    const ngnFetcher = new NGNRateFetcher();
 
     this.fetchers.set("KES", kesFetcher);
     this.fetchers.set("GHS", ghsFetcher);
+    this.fetchers.set("NGN", ngnFetcher);
   }
 
   async getRate(currency: string): Promise<FetcherResponse> {

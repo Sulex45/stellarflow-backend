@@ -1,18 +1,17 @@
 import {
-  Server,
   Keypair,
   TransactionBuilder,
   Operation,
-  Asset,
   Networks,
   Memo,
+  Horizon,
 } from "@stellar/stellar-sdk";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 export class StellarService {
-  private server: Server;
+  private server: Horizon.Server;
   private keypair: Keypair;
   private network: string;
 
@@ -29,7 +28,7 @@ export class StellarService {
       ? "https://horizon.stellar.org" 
       : "https://horizon-testnet.stellar.org";
     
-    this.server = new Server(horizonUrl);
+    this.server = new Horizon.Server(horizonUrl);
   }
 
   /**
