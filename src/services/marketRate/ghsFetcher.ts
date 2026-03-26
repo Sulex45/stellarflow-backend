@@ -1,5 +1,7 @@
 import axios from "axios";
 import { MarketRateFetcher, MarketRate, calculateMedian } from "./types";
+import { errorTracker } from "../errorTracker";
+import { webhookService } from "../webhook";
 
 type CoinGeckoPriceResponse = {
   stellar?: {
@@ -57,6 +59,9 @@ export class GHSRateFetcher implements MarketRateFetcher {
           timestamp: lastUpdatedAt,
           source: "CoinGecko (direct)",
         });
+        
+        // Success - reset error tracker
+        errorTracker.trackSuccess("GHS-price-fetch");
       }
     } catch (error) {
       console.debug("CoinGecko direct GHS price failed");
@@ -109,6 +114,9 @@ export class GHSRateFetcher implements MarketRateFetcher {
               fxTimestamp > lastUpdatedAt ? fxTimestamp : lastUpdatedAt,
             source: "CoinGecko + ExchangeRate API",
           });
+          
+          // Success - reset error tracker
+          errorTracker.trackSuccess("GHS-price-fetch");
         }
       }
     } catch (error) {
@@ -150,6 +158,9 @@ export class GHSRateFetcher implements MarketRateFetcher {
               timestamp: new Date(),
               source: "Alternative XLM pricing",
             });
+            
+            // Success - reset error tracker
+            errorTracker.trackSuccess("GHS-price-fetch");
           }
         }
       }
@@ -174,7 +185,26 @@ export class GHSRateFetcher implements MarketRateFetcher {
       };
     }
 
-    throw new Error("All GHS rate sources failed");
+    // All strategies failed - track failure and send notification if 3 consecutive failures
+    const error = new Error("All GHS rate sources failed");
+    const thresholdReached = errorTracker.trackFailure("GHS-price-fetch", {
+      errorMessage: error.message,
+      timestamp: new Date(),
+      service: "GHSRateFetcher",
+    });
+    
+    if (thresholdReached) {
+      await webhookService.sendErrorNotification({
+        errorType: "PRICE_FETCH_FAILED_CONSECUTIVE",
+        errorMessage: error.message,
+        attempts: 3,
+        service: "GHSRateFetcher",
+        pricePair: "XLM/GHS",
+        timestamp: new Date(),
+      });
+    }
+    
+    throw error;
   }
 
   async isHealthy(): Promise<boolean> {
