@@ -19,8 +19,8 @@ export function filterOutliers(prices: number[], multiplier: number = 1.5): numb
   const q1Index = Math.floor((n + 1) / 4);
   const q3Index = Math.floor(3 * (n + 1) / 4);
   
-  const q1 = sorted[q1Index];
-  const q3 = sorted[q3Index];
+  const q1 = sorted[q1Index] ?? sorted[0] ?? 0;
+  const q3 = sorted[q3Index] ?? sorted[n - 1] ?? 0;
   const iqr = q3 - q1;
 
   const lowerFence = q1 - multiplier * iqr;

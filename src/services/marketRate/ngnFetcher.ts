@@ -1,5 +1,5 @@
 import axios from "axios";
-import { MarketRateFetcher, MarketRate, calculateMedian, filterOutliers } from "./types";
+import { MarketRateFetcher, MarketRate, calculateMedian, filterOutliers, SourceTrustLevel, calculateWeightedAverage } from "./types";
 
 type CoinGeckoPriceResponse = {
   stellar?: {
@@ -251,17 +251,22 @@ export class NGNRateFetcher implements MarketRateFetcher {
     if (prices.length > 0) {
       let rateValues = prices.map((p) => p.rate).filter(p => p > 0);
       rateValues = filterOutliers(rateValues);
-      const medianRate = calculateMedian(rateValues);
       const mostRecentTimestamp = prices.reduce(
         (latest, p) => (p.timestamp > latest ? p.timestamp : latest),
         prices[0]?.timestamp ?? new Date(),
       );
 
+      const weightedInput = prices.map((p) => ({
+        value: p.rate,
+        trustLevel: p.trustLevel as SourceTrustLevel,
+      }));
+      const weightedRate = calculateWeightedAverage(weightedInput);
+
       return {
         currency: "NGN",
         rate: weightedRate,
         timestamp: mostRecentTimestamp,
-        source: `Median of ${prices.length} sources (outliers filtered)`,
+        source: `Weighted average of ${prices.length} sources (outliers filtered)`,
       };
     }
 

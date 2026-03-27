@@ -6,6 +6,7 @@ import {
   Networks,
   Memo,
   Horizon,
+  xdr,
 } from "@stellar/stellar-sdk";
 import dotenv from "dotenv";
 
@@ -207,15 +208,13 @@ export class StellarService {
             // Get the signature hint
             const hint = signerKeypair.signatureHint();
             
-            // Get the current envelope
-            const envelope = transaction.toEnvelope();
+            // Add the signature to the transaction
+            const decoratedSignature = new xdr.DecoratedSignature({
+              hint: signerKeypair.signatureHint(),
+              signature: signatureBuffer,
+            });
             
-            // Add the signature to the envelope
-            envelope.signature().push(signatureBuffer);
-            
-            // Add the hint to the hints (Stellar tracks which keys signed)
-            // Note: This is a simplified approach; in production,
-            // you might want to use a library that properly handles multi-sig
+            transaction.signatures.push(decoratedSignature);
             
           } catch (error) {
             console.error(
