@@ -1,95 +1,121 @@
-# 🌊 StellarFlow Frontend
+# StellarFlow Backend
 
-> 🌍 **Africa-Oriented Data Oracle Dashboard** | Modern Web3 interface for localized real-time data on Stellar.
+TypeScript/Node.js backend for the StellarFlow oracle network. This service fetches localized market data, reviews and stores it, exposes API endpoints for consumers, and submits approved updates to Stellar.
 
-StellarFlow Frontend is a cutting-edge **Next.js 15** application that provides a seamless user interface for interacting with the StellarFlow Oracle. [cite_start]Our platform specializes in providing localized, high-impact data visualizations for the African market[cite: 1, 12].
+## Features
 
-## 🚀 Features
-- **💰 Multi-Currency Support**: View data in XLM, NGN, KES, and GHS.
-- [cite_start]**🔐 Wallet Integration**: Support for Albedo and Freightliner[cite: 701].
-- [cite_start]**📱 Mobile-First Design**: Optimized for performance on lower-bandwidth devices using Tailwind CSS[cite: 1, 91].
-- [cite_start]**📊 Live Oracle Feed**: Real-time status updates from the StellarFlow Backend[cite: 5, 185].
+- Express API with market-rate, history, stats, intelligence, asset, price update, and status routes
+- Market data fetchers for NGN, KES, GHS, and shared provider integrations
+- Prisma/PostgreSQL persistence for price history, on-chain confirmations, provider reputation, and multi-signature workflows
+- Stellar submission flow with optional multi-signature approval
+- Socket.IO broadcasting for live dashboard updates
+- Swagger docs at `/api/docs`
 
-## 🛠️ Quick Start
+## Tech Stack
+
+- Node.js + TypeScript
+- Express
+- Prisma + PostgreSQL
+- Socket.IO
+- Stellar SDK / Soroban integrations
+
+## Quick Start
+
 ### Prerequisites
-- [cite_start]**Node.js** v18+ [cite: 83]
-- [cite_start]**Stellar Wallet** (Albedo recommended) [cite: 760]
+
+- Node.js 18+
+- PostgreSQL
+- A configured `.env` file with the required Stellar and database secrets
 
 ### Installation
+
 ```bash
-git clone [https://github.com/StellarFlow-Network/stellarflow-frontend.git](https://github.com/StellarFlow-Network/stellarflow-frontend.git)
-cd stellarflow-frontend
+git clone https://github.com/StellarFlow-Network/stellarflow-backend.git
+cd stellarflow-backend
 npm install
-npm run dev
+cp .env.example .env
+```
 
-🎨 Tech Stack
+### Run the Server
 
-Framework: Next.js 15 (App Router) 
-Styling: Tailwind CSS 
-State Management: Zustand 
-Web3: @stellar/stellar-sdk
-
----
-
-### 2. Backend README (`stellarflow-backend`)
-**Location:** `stellarflow-backend/README.md`
-
-```markdown
-# ⚙️ StellarFlow Backend
-
-> 🏗️ **Oracle Infrastructure & Data Engine** | TypeScript/Node.js backend for the StellarFlow network.
-
-This repository serves as the central data engine for StellarFlow. It orchestrates real-time price fetching from localized African markets and feeds that data to the Soroban smart contracts on the Stellar blockchain[cite: 17, 172].
-
-## 🛠️ Key Services
-- **🛰️ Price Oracle**: Fetches real-time exchange rates (e.g., NGN/XLM) every 10 seconds[cite: 179].
-- **🔗 Soroban Service**: Interfaces with on-chain contracts to resolve oracle data[cite: 180].
-- **🛡️ JWT Auth**: Secure, wallet-based authentication[cite: 172].
-- **💾 Database**: Scalable PostgreSQL with Prisma ORM[cite: 194].
-
-## 📂 Project Structure
-```text
-├── prisma/        # Database schema and migrations [cite: 194]
-├── src/
-│   ├── routes/    # API Endpoints [cite: 174]
-│   ├── services/  # Business logic (Oracle, Soroban) [cite: 175]
-│   └── utils/     # Helper functions [cite: 176]
-
-Running the Server
-
-Configure .env: Copy .env.example and add your SOROBAN_ADMIN_SECRET.
-Install: npm install 
-Run: npm run dev
-
----
-
-### 3. Smart Contracts README (`stellarflow-contracts`)
-**Location:** `stellarflow-contracts/README.md`
-
-```markdown
-# 📜 StellarFlow Smart Contracts
-
-> 💎 **Soroban Smart Contracts** | The trustless core of the StellarFlow Oracle.
-
-These smart contracts, written in **Rust**, manage the on-chain verification and storage of Oracle data. Built specifically for the **Soroban** platform on Stellar[cite: 170, 443].
-
-## 🛡️ Contract Functions
-- **`initialize`**: Set the admin and authorized data providers.
-- **`push_data`**: Allow authorized oracles to submit new data points.
-- **`get_latest_price`**: Public function for other dApps to consume Oracle data.
-
-## 🔧 Development
-### Prerequisites
-- **Rust Toolchain**: `rustup` [cite: 195]
-- **Stellar CLI**: `stellar-cli` 
-
-### Build & Test
 ```bash
-# Build the contract to .wasm
-stellar contract build
+npm run dev
+```
 
-# Run unit tests
-cargo test
+### Build and Start
 
-Acknowledgments
-Built with ❤️ for the Stellar Africa community.
+```bash
+npm run build
+npm start
+```
+
+## System Flow
+
+```mermaid
+flowchart TD
+    A[Dashboard / API Clients] --> B[Express API Routes]
+    B --> C[Service Layer]
+
+    C --> D[Market Rate Fetchers]
+    D --> E[External Market Data Providers]
+
+    C --> F[Review / Protection Logic]
+    F --> G[(PostgreSQL via Prisma)]
+
+    C --> H[Stellar Service]
+    H --> I[Multi-Sig Services]
+    H --> J[Stellar / Soroban Network]
+    I --> J
+
+    J --> K[Soroban Event Listener]
+    K --> G
+
+    C --> L[Socket.IO / Webhooks]
+    L --> A
+```
+
+### Flow Summary
+
+1. Clients call the backend through the Express API.
+2. The service layer fetches rates from market-data providers and normalizes them.
+3. Review and protection logic decides whether the rate can proceed automatically or needs additional handling.
+4. Approved updates are stored in PostgreSQL and submitted to Stellar directly or through the multi-signature workflow.
+5. On-chain events are observed and written back into backend storage.
+6. Live updates are pushed back to connected clients through Socket.IO and webhook-style notifications.
+
+## Project Structure
+
+```text
+src/
+├── controllers/   # Request handlers
+├── lib/           # Prisma, Swagger, Socket.IO setup
+├── logic/         # Shared domain logic such as filtering
+├── middleware/    # API middleware
+├── routes/        # Express route modules
+├── services/      # Market rate, Stellar, intelligence, review, and multi-sig services
+└── utils/         # Environment, retry, time, and conversion helpers
+
+prisma/
+├── schema.prisma  # Database schema
+└── seed.ts        # Seed script
+```
+
+## Useful Scripts
+
+```bash
+npm run dev
+npm run build
+npm run lint
+npm run format:check
+npm run test
+npm run db:generate
+npm run db:push
+```
+
+## API Docs
+
+After the server starts, open:
+
+```text
+http://localhost:3000/api/docs
+```
