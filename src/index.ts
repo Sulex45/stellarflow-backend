@@ -1,5 +1,6 @@
 import express from "express";
 import { createServer } from "http";
+import compression from "compression";
 import cors from "cors";
 import dotenv from "dotenv";
 import morgan from "morgan";
@@ -14,6 +15,7 @@ import priceUpdatesRouter from "./routes/priceUpdates";
 import assetsRouter from "./routes/assets";
 import statusRouter from "./routes/status";
 import prisma from "./lib/prisma";
+import { disconnectRedis } from "./lib/redis";
 import { initSocket } from "./lib/socket";
 import { SorobanEventListener } from "./services/sorobanEventListener";
 import { specs } from "./lib/swagger";
@@ -71,6 +73,7 @@ const horizonServer = new Horizon.Server(horizonUrl);
 
 // Middleware
 app.use(morgan("dev"));
+app.use(compression());
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -288,7 +291,7 @@ app.use(
     err: Error,
     req: express.Request,
     res: express.Response,
-    next: express.NextFunction,
+    _next: express.NextFunction,
   ) => {
     console.error("Unhandled error:", err);
     res.status(500).json({
@@ -329,7 +332,7 @@ const closeHttpServer = (): Promise<void> =>
     });
   });
 
-const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+const shutdown = async (signal: "SIGINT" | "SIGTERM"): Promise<void> => {
   if (isShuttingDown) {
     console.log(
       `Shutdown already in progress. Received duplicate ${signal} signal.`,
@@ -350,6 +353,9 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
 
     await prisma.$disconnect();
     console.log("Database connections closed cleanly.");
+
+    await disconnectRedis();
+    console.log("Redis connections closed cleanly.");
 
     process.exit(0);
   } catch (error) {

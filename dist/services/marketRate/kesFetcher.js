@@ -1,129 +1,5 @@
-import axios from "axios";
-import { calculateMedian, filterOutliers, calculateWeightedAverage, } from "./types";
-import { withRetry } from "../../utils/retryUtil.js";
-/**
- * Circuit Breaker States
- */
-var CircuitState;
-(function (CircuitState) {
-    CircuitState["CLOSED"] = "CLOSED";
-    CircuitState["OPEN"] = "OPEN";
-    CircuitState["HALF_OPEN"] = "HALF_OPEN";
-})(CircuitState || (CircuitState = {}));
-/**
- * Circuit Breaker Implementation
- */
-class CircuitBreaker {
-    config;
-    state = CircuitState.CLOSED;
-    failureCount = 0;
-    lastFailureTime = null;
-    halfOpenAttempts = 0;
-    constructor(config) {
-        this.config = config;
-    }
-    async execute(operation) {
-        if (this.state === CircuitState.OPEN) {
-            if (this.shouldAttemptRecovery()) {
-                this.state = CircuitState.HALF_OPEN;
-                this.halfOpenAttempts = 0;
-            }
-            else {
-                throw new Error("Circuit breaker is OPEN - service temporarily unavailable");
-            }
-        }
-        if (this.state === CircuitState.HALF_OPEN) {
-            this.halfOpenAttempts++;
-            if (this.halfOpenAttempts > this.config.halfOpenMaxAttempts) {
-                throw new Error("Circuit breaker half-open test limit exceeded");
-            }
-        }
-        try {
-            const result = await operation();
-            this.onSuccess();
-            return result;
-        }
-        catch (error) {
-            this.onFailure();
-            throw error;
-        }
-    }
-    onSuccess() {
-        this.failureCount = 0;
-        if (this.state === CircuitState.HALF_OPEN) {
-            this.state = CircuitState.CLOSED;
-        }
-    }
-    onFailure() {
-        this.failureCount++;
-        this.lastFailureTime = new Date();
-        if (this.state === CircuitState.HALF_OPEN) {
-            this.state = CircuitState.OPEN;
-        }
-        else if (this.failureCount >= this.config.failureThreshold) {
-            this.state = CircuitState.OPEN;
-        }
-    }
-    shouldAttemptRecovery() {
-        if (!this.lastFailureTime)
-            return true;
-        const elapsed = Date.now() - this.lastFailureTime.getTime();
-        return elapsed >= this.config.recoveryTimeoutMs;
-    }
-    getState() {
-        return this.state;
-    }
-    reset() {
-        this.state = CircuitState.CLOSED;
-        this.failureCount = 0;
-        this.lastFailureTime = null;
-        this.halfOpenAttempts = 0;
-    }
-}
-/**
- * Rate Source Configuration
- */
-const RATE_SOURCES = [
-    {
-        name: "Binance Spot API",
-        url: "https://api.binance.com/api/v3/ticker/price",
-    },
-    {
-        name: "Binance Unified Trading (24h)",
-        url: "https://api.binance.com/api/v3/ticker/24hr",
-    },
-    {
-        name: "Central Bank of Kenya",
-        url: "https://www.centralbank.go.ke/wp-json/fx-rate/v1/rates",
-    },
-    {
-        name: "XE.com",
-        url: "https://www.xe.com/currencytables/?from=USD&to=KES",
-    },
-];
-/**
- * API Configuration
- */
-const BINANCE_SPOT_URL = "https://api.binance.com/api/v3/ticker/price";
-const BINANCE_24H_URL = "https://api.binance.com/api/v3/ticker/24hr";
-const BINANCE_P2P_URL = "https://p2p-api.binance.com/bapi/c2c/v2/public/c2c/adv/search";
-/**
- * Default timeout for API requests (ms)
- */
-const DEFAULT_TIMEOUT_MS = 8000;
-/**
- * Approximate KES/USD rate for calculation fallback
- * Note: In production, this should be fetched from a reliable source
- */
-const APPROXIMATE_KES_USD_RATE = 130.5;
-/**
- * KES/XLM Rate Fetcher using Binance Public API
- * Implements multiple strategies to fetch KES rates:
- * 1. Direct Binance Spot API (XLMKES pair)
- * 2. Binance P2P API for KES
- * 3. Binance Spot API (XLMUSDT) × USD/KES calculation
- * 4. Fallback to Central Bank of Kenya
- */
+import axios from 'axios';
+import { validatePrice } from './validation';
 export class KESRateFetcher {
     circuitBreaker;
     constructor() {
@@ -400,8 +276,8 @@ export class KESRateFetcher {
             if (rates && rates.length > 0) {
                 const latestRate = rates[0];
                 return {
-                    currency: "KES",
-                    rate: parseFloat(latestRate.rate),
+                    currency: 'KES',
+                    rate: validatePrice(Number(latestRate.rate)),
                     timestamp: new Date(latestRate.date),
                     source: cbkSource.name,
                 };
@@ -428,8 +304,8 @@ export class KESRateFetcher {
                 maxRetries: 3,
                 retryDelay: 1000,
             });
-            // Placeholder - in production, parse actual response
-            // For now, return approximate rate
+            // Placeholder rate - in reality, you'd parse the actual response
+            const placeholderRate = validatePrice(130.5); // Approximate KES/USD rate
             return {
                 currency: "KES",
                 rate: APPROXIMATE_KES_USD_RATE,

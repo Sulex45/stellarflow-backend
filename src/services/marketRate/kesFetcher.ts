@@ -1,15 +1,6 @@
-import axios, { AxiosError } from "axios";
-import {
-  MarketRateFetcher,
-  MarketRate,
-  RateSource,
-  RateFetchError,
-  calculateMedian,
-  filterOutliers,
-  SourceTrustLevel,
-  calculateWeightedAverage,
-} from "./types";
-import { withRetry } from "../../utils/retryUtil.js";
+import axios from 'axios';
+import { MarketRateFetcher, MarketRate, RateSource } from './types';
+import { validatePrice } from './validation';
 
 /**
  * Binance Ticker Response Interface
@@ -531,8 +522,8 @@ export class KESRateFetcher implements MarketRateFetcher {
       if (rates && rates.length > 0) {
         const latestRate = rates[0];
         return {
-          currency: "KES",
-          rate: parseFloat(latestRate.rate),
+          currency: 'KES',
+          rate: validatePrice(Number(latestRate.rate)),
           timestamp: new Date(latestRate.date),
           source: cbkSource.name,
         };
@@ -566,8 +557,9 @@ export class KESRateFetcher implements MarketRateFetcher {
         }
       );
 
-      // Placeholder - in production, parse actual response
-      // For now, return approximate rate
+      // Placeholder rate - in reality, you'd parse the actual response
+      const placeholderRate = validatePrice(130.5); // Approximate KES/USD rate
+      
       return {
         currency: "KES",
         rate: APPROXIMATE_KES_USD_RATE,

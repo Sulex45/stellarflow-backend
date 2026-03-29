@@ -1,8 +1,6 @@
-import axios from "axios";
-import { MarketRateFetcher, MarketRate, calculateMedian, filterOutliers, SourceTrustLevel, calculateWeightedAverage } from "./types";
-import { errorTracker } from "../errorTracker";
-import { webhookService } from "../webhook";
-import { withRetry } from "../../utils/retryUtil.js";
+import axios from 'axios';
+import { MarketRateFetcher, MarketRate } from './types';
+import { validatePrice } from './validation';
 
 type CoinGeckoPriceResponse = {
   stellar?: {
@@ -111,82 +109,25 @@ export class GHSRateFetcher implements MarketRateFetcher {
           { maxRetries: 3, retryDelay: 1000 }
         );
 
-        const usdToGhsRate = exchangeRateResponse.data.rates?.GHS;
-        if (
-          exchangeRateResponse.data.result === "success" &&
-          typeof usdToGhsRate === "number" &&
-          usdToGhsRate > 0
-        ) {
-          const fxTimestamp = exchangeRateResponse.data.time_last_update_unix
-            ? new Date(exchangeRateResponse.data.time_last_update_unix * 1000)
-            : new Date();
-          const lastUpdatedAt = stellarPrice.last_updated_at
-            ? new Date(stellarPrice.last_updated_at * 1000)
-            : new Date();
-
-          prices.push({
-            rate: stellarPrice.usd * usdToGhsRate,
-            timestamp:
-              fxTimestamp > lastUpdatedAt ? fxTimestamp : lastUpdatedAt,
-            source: "CoinGecko + ExchangeRate API",
-            trustLevel: "trusted",
-          });
-          
-          // Success - reset error tracker
-          errorTracker.trackSuccess("GHS-price-fetch");
-        }
+      if (typeof stellarPrice.usd !== 'number') {
+        throw new Error('CoinGecko did not return a usable USD price for Stellar');
       }
     } catch (error) {
       console.debug("CoinGecko + ExchangeRate API failed");
     }
 
-    // Strategy 3: Try alternative XLM pricing source
-    try {
-      const alternativeUrl =
-        "https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd";
-      const altResponse = await withRetry(
-        () => axios.get(alternativeUrl, {
-          timeout: 10000,
-          headers: {
-            "User-Agent": "StellarFlow-Oracle/1.0",
-          },
-        }),
-        { maxRetries: 3, retryDelay: 1000 }
-      );
+      const usdPrice = validatePrice(stellarPrice.usd);
 
-      if (altResponse.data?.stellar?.usd) {
-        const xlmUsd = parseFloat(altResponse.data.stellar.usd);
-        if (!isNaN(xlmUsd) && xlmUsd > 0) {
-          const ghsResponse = await withRetry(
-            () => axios.get<ExchangeRateApiResponse>(
-              this.usdToGhsUrl,
-              {
-                timeout: 10000,
-                headers: {
-                  "User-Agent": "StellarFlow-Oracle/1.0",
-                },
-              },
-            ),
-            { maxRetries: 3, retryDelay: 1000 }
-          );
+      const exchangeRateResponse = await axios.get<ExchangeRateApiResponse>(this.usdToGhsUrl, {
+        timeout: 10000,
+        headers: {
+          "User-Agent": "StellarFlow-Oracle/1.0",
+        },
+      });
 
-          const ghsRate = ghsResponse.data.rates?.GHS;
-          if (
-            ghsResponse.data.result === "success" &&
-            typeof ghsRate === "number" &&
-            ghsRate > 0
-          ) {
-            prices.push({
-              rate: xlmUsd * ghsRate,
-              timestamp: new Date(),
-              source: "Alternative XLM pricing",
-              trustLevel: "new",
-            });
-            
-            // Success - reset error tracker
-            errorTracker.trackSuccess("GHS-price-fetch");
-          }
-        }
+      const usdToGhsRate = exchangeRateResponse.data.rates?.GHS;
+      if (exchangeRateResponse.data.result !== 'success' || typeof usdToGhsRate !== 'number') {
+        throw new Error('USD to GHS conversion feed did not return a usable GHS rate');
       }
     } catch (error) {
       console.debug("Alternative XLM pricing source failed");
@@ -202,18 +143,17 @@ export class GHSRateFetcher implements MarketRateFetcher {
         prices[0]?.timestamp ?? new Date(),
       );
 
-      const weightedRate = calculateWeightedAverage(
-        prices.map((p) => ({
-          value: p.rate,
-          trustLevel: p.trustLevel as SourceTrustLevel,
-        }))
-      );
+      const validatedUsdToGhsRate = validatePrice(usdToGhsRate);
+
+      const fxTimestamp = exchangeRateResponse.data.time_last_update_unix
+        ? new Date(exchangeRateResponse.data.time_last_update_unix * 1000)
+        : lastUpdatedAt;
 
       return {
-        currency: "GHS",
-        rate: weightedRate,
-        timestamp: mostRecentTimestamp,
-        source: `Weighted average of ${prices.length} sources (outliers filtered)`,
+        currency: 'GHS',
+        rate: validatePrice(usdPrice * validatedUsdToGhsRate),
+        timestamp: fxTimestamp > lastUpdatedAt ? fxTimestamp : lastUpdatedAt,
+        source: 'CoinGecko + ExchangeRate API'
       };
     }
 
