@@ -196,6 +196,7 @@ export class PriceReviewService {
         fetched_at,
         review_status,
         contract_status,
+        reason,
         review_reason,
         baseline_rate,
         baseline_timestamp,
@@ -221,11 +222,17 @@ export class PriceReviewService {
       throw new Error(`Failed to create price review record for ${currency}`);
     }
 
+    if (reason !== undefined) {
     if (reviewStatus === "PENDING") {
       await webhookService.sendManualReviewNotification({
         reviewId: inserted.id,
         currency,
         rate: normalizedRate.rate,
+        previousRate: comparisonRate,
+        changePercent,
+        source: normalizedRate.source,
+        timestamp: normalizedRate.timestamp,
+        reason,
         previousRate: comparisonRate!,
         changePercent: changePercent!,
         source: normalizedRate.source,
