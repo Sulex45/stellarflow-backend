@@ -16,7 +16,7 @@ export const prisma = new Proxy({} as PrismaClient, {
     if (!globalForPrisma.prisma) {
       // Ensure environment variables are loaded before initialization
       dotenv.config();
-      
+
       const connectionString = process.env.DATABASE_URL;
       if (!connectionString) {
         throw new Error("DATABASE_URL must be defined");

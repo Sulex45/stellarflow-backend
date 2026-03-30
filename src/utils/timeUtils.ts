@@ -6,7 +6,8 @@
  * parsing strings or Date objects.
  */
 export function normalizeDateToUTC(value: Date | string | number): Date {
-  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  const date =
+    value instanceof Date ? new Date(value.getTime()) : new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     throw new Error(`Invalid date value provided: ${value}`);

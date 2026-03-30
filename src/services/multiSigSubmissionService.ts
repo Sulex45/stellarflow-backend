@@ -28,15 +28,13 @@ export class MultiSigSubmissionService {
    */
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.warn(
-        "[MultiSigSubmissionService] Service is already running"
-      );
+      console.warn("[MultiSigSubmissionService] Service is already running");
       return;
     }
 
     this.isRunning = true;
     console.info(
-      `[MultiSigSubmissionService] Started with ${this.pollIntervalMs}ms poll interval`
+      `[MultiSigSubmissionService] Started with ${this.pollIntervalMs}ms poll interval`,
     );
 
     // Initial check
@@ -45,10 +43,7 @@ export class MultiSigSubmissionService {
     // Start periodic polling
     this.pollTimer = setInterval(() => {
       this.checkAndSubmitApprovedPrices().catch((err) => {
-        console.error(
-          "[MultiSigSubmissionService] Polling error:",
-          err
-        );
+        console.error("[MultiSigSubmissionService] Polling error:", err);
       });
     }, this.pollIntervalMs);
   }
@@ -92,7 +87,7 @@ export class MultiSigSubmissionService {
       }
 
       console.info(
-        `[MultiSigSubmissionService] Found ${approvedPrices.length} approved prices to submit`
+        `[MultiSigSubmissionService] Found ${approvedPrices.length} approved prices to submit`,
       );
 
       // Process each approved price
@@ -102,7 +97,7 @@ export class MultiSigSubmissionService {
         } catch (error) {
           console.error(
             `[MultiSigSubmissionService] Failed to submit multi-sig price ${multiSigPrice.id}:`,
-            error
+            error,
           );
           // Continue with next price, don't let one failure block others
         }
@@ -110,7 +105,7 @@ export class MultiSigSubmissionService {
     } catch (error) {
       console.error(
         "[MultiSigSubmissionService] Error checking approved prices:",
-        error
+        error,
       );
     }
   }
@@ -128,13 +123,13 @@ export class MultiSigSubmissionService {
 
       if (signatures.length === 0) {
         console.warn(
-          `[MultiSigSubmissionService] No signatures found for multi-sig price ${multiSigPrice.id}`
+          `[MultiSigSubmissionService] No signatures found for multi-sig price ${multiSigPrice.id}`,
         );
         return;
       }
 
       console.info(
-        `[MultiSigSubmissionService] Submitting multi-sig price ${multiSigPrice.id} (${multiSigPrice.currency} @ ${multiSigPrice.rate}) with ${signatures.length} signatures`
+        `[MultiSigSubmissionService] Submitting multi-sig price ${multiSigPrice.id} (${multiSigPrice.currency} @ ${multiSigPrice.rate}) with ${signatures.length} signatures`,
       );
 
       // Submit to Stellar with multiple signatures
@@ -143,30 +138,26 @@ export class MultiSigSubmissionService {
         multiSigPrice.currency,
         multiSigPrice.rate.toNumber(),
         memoId,
-        signatures
+        signatures,
       );
 
       // Record the submission
-      await multiSigService.recordSubmission(
-        multiSigPrice.id,
-        memoId,
-        txHash
-      );
+      await multiSigService.recordSubmission(multiSigPrice.id, memoId, txHash);
 
       // Mark the associated price review as submitted
       await priceReviewService.markContractSubmitted(
         multiSigPrice.priceReviewId,
         memoId,
-        txHash
+        txHash,
       );
 
       console.info(
-        `[MultiSigSubmissionService] ✅ Successfully submitted multi-sig price ${multiSigPrice.id} - TxHash: ${txHash}`
+        `[MultiSigSubmissionService] ✅ Successfully submitted multi-sig price ${multiSigPrice.id} - TxHash: ${txHash}`,
       );
     } catch (error) {
       console.error(
         `[MultiSigSubmissionService] Error submitting multi-sig price ${multiSigPrice.id}:`,
-        error
+        error,
       );
       throw error;
     }
@@ -181,15 +172,12 @@ export class MultiSigSubmissionService {
       const count = await multiSigService.cleanupExpiredRequests();
       if (count > 0) {
         console.info(
-          `[MultiSigSubmissionService] Cleaned up ${count} expired multi-sig requests`
+          `[MultiSigSubmissionService] Cleaned up ${count} expired multi-sig requests`,
         );
       }
       return count;
     } catch (error) {
-      console.error(
-        "[MultiSigSubmissionService] Error during cleanup:",
-        error
-      );
+      console.error("[MultiSigSubmissionService] Error during cleanup:", error);
       return 0;
     }
   }

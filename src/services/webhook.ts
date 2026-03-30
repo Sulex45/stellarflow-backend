@@ -121,7 +121,10 @@ export class WebhookService {
         },
       );
     } catch (error) {
-      console.error("Failed to send webhook notification after retries:", error);
+      console.error(
+        "Failed to send webhook notification after retries:",
+        error,
+      );
     }
   }
 

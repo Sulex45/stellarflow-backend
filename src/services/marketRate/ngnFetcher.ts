@@ -76,10 +76,9 @@ export class NGNRateFetcher implements MarketRateFetcher {
   private logger = createFetcherLogger("NGNRate");
 
   private vtpassBase(): string {
-    return (process.env.VTPASS_API_BASE_URL ?? "https://vtpass.com/api").replace(
-      /\/$/,
-      "",
-    );
+    return (
+      process.env.VTPASS_API_BASE_URL ?? "https://vtpass.com/api"
+    ).replace(/\/$/, "");
   }
 
   private vtpassHeaders(): Record<string, string> | undefined {
@@ -163,7 +162,8 @@ export class NGNRateFetcher implements MarketRateFetcher {
           const lastUpdatedAt = coinGeckoResponse.data.stellar?.last_updated_at
             ? new Date(coinGeckoResponse.data.stellar.last_updated_at * 1000)
             : new Date();
-          const ts = vt.timestamp > lastUpdatedAt ? vt.timestamp : lastUpdatedAt;
+          const ts =
+            vt.timestamp > lastUpdatedAt ? vt.timestamp : lastUpdatedAt;
 
           prices.push({
             rate: usd * vt.ngnPerUsd,
@@ -254,7 +254,8 @@ export class NGNRateFetcher implements MarketRateFetcher {
 
           prices.push({
             rate: stellarPrice.usd * usdToNgn,
-            timestamp: fxTimestamp > lastUpdatedAt ? fxTimestamp : lastUpdatedAt,
+            timestamp:
+              fxTimestamp > lastUpdatedAt ? fxTimestamp : lastUpdatedAt,
             source: "CoinGecko + ExchangeRate API (USD->NGN)",
             providerKey: "coinGeckoExchangeRateUsdNgn",
           });

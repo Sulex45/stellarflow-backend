@@ -77,7 +77,10 @@ async function run() {
 
     assert.equal(rate.currency, "NGN");
     assert.equal(rate.rate, expectedRate);
-    assert.equal(rate.source, "Weighted average of 3 sources (outliers filtered)");
+    assert.equal(
+      rate.source,
+      "Weighted average of 3 sources (outliers filtered)",
+    );
   } finally {
     axios.get = originalGet;
     for (const [key, val] of Object.entries(savedEnv)) {

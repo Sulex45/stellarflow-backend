@@ -30,6 +30,13 @@ export class MarketRateService {
   private readonly LATEST_PRICES_REDIS_TTL_SECONDS = 5;
   private multiSigEnabled: boolean;
   private remoteOracleServers: string[] = [];
+  private pendingSubmissions: Array<{
+    currency: string;
+    rate: number;
+    reviewId: number;
+  }> = [];
+  private batchTimeout: any = null;
+  private readonly BATCH_WINDOW_MS = 5000; // 5 seconds bundle window
 
   constructor() {
     this.stellarService = new StellarService();
@@ -158,9 +165,9 @@ export class MarketRateService {
 
       if (!reviewAssessment.manualReviewRequired) {
         try {
-          const memoId = this.stellarService.generateMemoId(normalizedCurrency);
-
           if (this.multiSigEnabled) {
+            const memoId =
+              this.stellarService.generateMemoId(normalizedCurrency);
             // Multi-sig workflow: create request and collect signatures
             console.info(
               `[MarketRateService] Starting multi-sig workflow for ${normalizedCurrency} rate ${rate.rate}`,
@@ -222,6 +229,20 @@ export class MarketRateService {
             console.info(
               `[MarketRateService] Single-sig price update submitted for ${normalizedCurrency}`,
             );
+
+            this.pendingSubmissions.push({
+              currency: normalizedCurrency,
+              rate: rate.rate,
+              reviewId: reviewAssessment.reviewRecordId,
+            });
+
+            // Start batch timeout if not already running
+            if (!this.batchTimeout) {
+              this.batchTimeout = setTimeout(
+                () => this.flushBatchSubmissions(),
+                this.BATCH_WINDOW_MS,
+              );
+            }
           }
         } catch (stellarError) {
           console.error(

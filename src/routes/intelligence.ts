@@ -39,10 +39,10 @@ const router = Router();
  */
 router.get("/price-change/:currency", async (req, res) => {
   const currency = req.params.currency.toUpperCase();
-  
+
   try {
     const change = await intelligenceService.calculate24hPriceChange(currency);
-    
+
     res.json({
       success: true,
       currency,
@@ -84,7 +84,7 @@ router.get("/price-change/:currency", async (req, res) => {
 router.get("/stale", async (req, res) => {
   try {
     const staleCurrencies = await intelligenceService.getStaleCurrencies();
-    
+
     res.json({
       success: true,
       staleCurrencies,

@@ -29,7 +29,7 @@ export class SorobanEventListener {
       process.env.ORACLE_SECRET_KEY || process.env.SOROBAN_ADMIN_SECRET;
     if (!secret) {
       throw new Error(
-        "ORACLE_SECRET_KEY or SOROBAN_ADMIN_SECRET not found in environment variables"
+        "ORACLE_SECRET_KEY or SOROBAN_ADMIN_SECRET not found in environment variables",
       );
     }
 
@@ -53,7 +53,7 @@ export class SorobanEventListener {
 
     this.isRunning = true;
     console.log(
-      `[EventListener] Starting listener for account ${this.oraclePublicKey}`
+      `[EventListener] Starting listener for account ${this.oraclePublicKey}`,
     );
 
     // Initialize last processed ledger from the most recent on-chain record
@@ -63,7 +63,7 @@ export class SorobanEventListener {
     if (lastRecord) {
       this.lastProcessedLedger = lastRecord.ledgerSeq;
       console.log(
-        `[EventListener] Resuming from ledger ${this.lastProcessedLedger}`
+        `[EventListener] Resuming from ledger ${this.lastProcessedLedger}`,
       );
     }
 
@@ -129,10 +129,7 @@ export class SorobanEventListener {
       }
     } catch (error) {
       // Account not found is expected for new accounts with no transactions
-      if (
-        error instanceof Error &&
-        error.message.includes("status code 404")
-      ) {
+      if (error instanceof Error && error.message.includes("status code 404")) {
         console.log("[EventListener] No transactions found for oracle account");
         return;
       }
@@ -140,9 +137,7 @@ export class SorobanEventListener {
     }
   }
 
-  private extractMemoId(
-    tx: ServerApi.TransactionRecord
-  ): string | null {
+  private extractMemoId(tx: ServerApi.TransactionRecord): string | null {
     if (tx.memo_type === "text" && tx.memo) {
       return tx.memo;
     }
@@ -151,7 +146,7 @@ export class SorobanEventListener {
 
   private async parseOperations(
     tx: ServerApi.TransactionRecord,
-    memoId: string
+    memoId: string,
   ): Promise<ConfirmedPrice[]> {
     const confirmedPrices: ConfirmedPrice[] = [];
 
@@ -184,7 +179,7 @@ export class SorobanEventListener {
 
         if (isNaN(rate)) {
           console.warn(
-            `[EventListener] Invalid rate value for ${currency}: ${valueStr}`
+            `[EventListener] Invalid rate value for ${currency}: ${valueStr}`,
           );
           continue;
         }
@@ -201,7 +196,7 @@ export class SorobanEventListener {
     } catch (error) {
       console.error(
         `[EventListener] Error parsing operations for tx ${tx.hash}:`,
-        error
+        error,
       );
     }
 
@@ -229,12 +224,12 @@ export class SorobanEventListener {
           },
         });
         console.log(
-          `[EventListener] Saved confirmed price: ${price.currency} = ${price.rate} (tx: ${price.txHash.substring(0, 8)}...)`
+          `[EventListener] Saved confirmed price: ${price.currency} = ${price.rate} (tx: ${price.txHash.substring(0, 8)}...)`,
         );
       } catch (error) {
         console.error(
           `[EventListener] Error saving price for ${price.currency}:`,
-          error
+          error,
         );
       }
     }
@@ -258,7 +253,7 @@ export class SorobanEventListener {
   }
 
   async getLatestConfirmedPrice(
-    currency: string
+    currency: string,
   ): Promise<ConfirmedPrice | null> {
     const record = await prisma.onChainPrice.findFirst({
       where: { currency: currency.toUpperCase() },
@@ -281,7 +276,7 @@ export class SorobanEventListener {
 
   async getConfirmedPriceHistory(
     currency: string,
-    limit: number = 100
+    limit: number = 100,
   ): Promise<ConfirmedPrice[]> {
     const records = await prisma.onChainPrice.findMany({
       where: { currency: currency.toUpperCase() },

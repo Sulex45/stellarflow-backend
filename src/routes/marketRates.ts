@@ -1,4 +1,3 @@
-
 import { Router } from "express";
 import { getRate, getAllRates } from "../controllers/marketRatesController";
 import { MarketRateService } from "../services/marketRate";
@@ -74,8 +73,6 @@ router.get("/rate/:currency", getRate);
  */
 // Get all available rates
 router.get("/rates", getAllRates);
-
-
 
 /**
  * @swagger
