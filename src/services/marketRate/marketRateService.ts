@@ -11,6 +11,8 @@ import { StellarService } from "../stellarService";
 import { multiSigService } from "../multiSigService";
 import { getIO } from "../../lib/socket";
 import prisma from "../../lib/prisma";
+import { getRedisClient } from "../../lib/redis";
+import type { RedisClientType } from "redis";
 import dotenv from "dotenv";
 import { normalizeDateToUTC } from "../../utils/timeUtils";
 
@@ -22,13 +24,10 @@ import { priceReviewService } from "../priceReviewService";
 export class MarketRateService {
   private fetchers: Map<string, MarketRateFetcher> = new Map();
   private cache: Map<string, { rate: MarketRate; expiry: Date }> = new Map();
-  private latestPricesCache: {
-    response: AggregatedFetcherResponse;
-    expiry: Date;
-  } | null = null;
   private stellarService: StellarService;
   private readonly CACHE_DURATION_MS = 30000; // 30 seconds
-  private readonly LATEST_PRICES_CACHE_DURATION_MS = 10000; // 10 seconds
+  private readonly LATEST_PRICES_REDIS_KEY = "market-rates:latest:v1";
+  private readonly LATEST_PRICES_REDIS_TTL_SECONDS = 5;
   private multiSigEnabled: boolean;
   private remoteOracleServers: string[] = [];
   private pendingSubmissions: Array<{
@@ -202,6 +201,7 @@ export class MarketRateService {
             // (non-blocking - don't wait for completion)
             this.requestRemoteSignaturesAsync(
               signatureRequest.multiSigPriceId,
+              memoId,
             ).catch((err) => {
               console.error(
                 `[MarketRateService] Error requesting remote signatures:`,
@@ -215,9 +215,19 @@ export class MarketRateService {
             enrichedRate.pendingMultiSig = true;
             enrichedRate.multiSigPriceId = signatureRequest.multiSigPriceId;
           } else {
-            // Single-sig workflow: Add to batch instead of submitting immediately
+            // Single-sig workflow: submit directly to Stellar
+            const txHash = await this.stellarService.submitPriceUpdate(
+              normalizedCurrency,
+              rate.rate,
+              memoId,
+            );
+            await priceReviewService.markContractSubmitted(
+              reviewAssessment.reviewRecordId,
+              memoId,
+              txHash,
+            );
             console.info(
-              `[MarketRateService] Adding ${normalizedCurrency} rate ${rate.rate} to batch bundle`,
+              `[MarketRateService] Single-sig price update submitted for ${normalizedCurrency}`,
             );
 
             this.pendingSubmissions.push({
@@ -329,46 +339,151 @@ export class MarketRateService {
     return Array.from(this.fetchers.keys());
   }
 
-  async getLatestPrices(): Promise<AggregatedFetcherResponse> {
-    const cachedLatestPrices = this.latestPricesCache;
-    if (cachedLatestPrices && cachedLatestPrices.expiry > new Date()) {
-      return cachedLatestPrices.response;
+  protected getLatestPricesCacheClient(): Pick<
+    RedisClientType,
+    "get" | "setEx" | "del"
+  > | null {
+    const redisClient = getRedisClient();
+    if (!redisClient || !redisClient.isReady) {
+      return null;
     }
 
-    const results = await this.getAllRates();
+    return redisClient;
+  }
 
-    const successfulRates = results
-      .filter((result) => result.success && result.data)
-      .map((result) => result.data as MarketRate);
+  protected async fetchLatestPricesFromDatabase(): Promise<MarketRate[]> {
+    const rows = await prisma.priceHistory.findMany({
+      where: {
+        currency: {
+          in: this.getSupportedCurrencies(),
+        },
+      },
+      distinct: ["currency"],
+      orderBy: [{ currency: "asc" }, { timestamp: "desc" }],
+    });
 
-    const errorMessages = results
-      .filter((result) => !result.success)
-      .map((result) => result.error)
-      .filter((error): error is string => !!error);
+    return rows.map(
+      (row: {
+        currency: string;
+        rate: number | string;
+        timestamp: Date;
+        source: string;
+      }) => ({
+        currency: row.currency,
+        rate: Number(row.rate),
+        timestamp: normalizeDateToUTC(row.timestamp),
+        source: row.source,
+      }),
+    );
+  }
 
-    const allSuccessful =
-      successfulRates.length > 0 && errorMessages.length === 0;
+  private parseLatestPricesCache(
+    cachedPayload: string,
+  ): AggregatedFetcherResponse | null {
+    try {
+      const parsed = JSON.parse(cachedPayload) as {
+        success?: boolean;
+        error?: string;
+        errors?: string[];
+        data?: Array<
+          MarketRate & { timestamp: string; comparisonTimestamp?: string }
+        >;
+      };
 
-    const response = {
-      success: allSuccessful,
-      data: successfulRates,
-      ...(errorMessages.length > 0 && { error: errorMessages[0] }),
-      ...(errorMessages.length > 0 && { errors: errorMessages }),
-    };
+      if (typeof parsed.success !== "boolean") {
+        return null;
+      }
 
-    if (response.success) {
-      this.latestPricesCache = {
-        response,
-        expiry: new Date(Date.now() + this.LATEST_PRICES_CACHE_DURATION_MS),
+      const hydratedRates = Array.isArray(parsed.data)
+        ? parsed.data.map((rate) => ({
+            ...rate,
+            timestamp: new Date(rate.timestamp),
+            ...(rate.comparisonTimestamp && {
+              comparisonTimestamp: new Date(rate.comparisonTimestamp),
+            }),
+          }))
+        : undefined;
+
+      return {
+        success: parsed.success,
+        ...(hydratedRates && { data: hydratedRates }),
+        ...(parsed.error && { error: parsed.error }),
+        ...(parsed.errors && { errors: parsed.errors }),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async getLatestPrices(): Promise<AggregatedFetcherResponse> {
+    const cacheClient = this.getLatestPricesCacheClient();
+
+    if (cacheClient) {
+      try {
+        const cachedPayload = await cacheClient.get(
+          this.LATEST_PRICES_REDIS_KEY,
+        );
+        if (cachedPayload) {
+          const cachedResponse = this.parseLatestPricesCache(cachedPayload);
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to read latest prices from Redis cache:", error);
+      }
+    }
+
+    try {
+      const latestRates = await this.fetchLatestPricesFromDatabase();
+
+      if (latestRates.length === 0) {
+        return {
+          success: false,
+          error: "No latest prices available",
+        };
+      }
+
+      const response: AggregatedFetcherResponse = {
+        success: true,
+        data: latestRates,
+      };
+
+      if (cacheClient) {
+        try {
+          await cacheClient.setEx(
+            this.LATEST_PRICES_REDIS_KEY,
+            this.LATEST_PRICES_REDIS_TTL_SECONDS,
+            JSON.stringify(response),
+          );
+        } catch (error) {
+          console.warn("Failed to write latest prices to Redis cache:", error);
+        }
+      }
+
+      return response;
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch latest prices from database",
       };
     }
-
-    return response;
   }
 
   clearCache(): void {
     this.cache.clear();
-    this.latestPricesCache = null;
+
+    const cacheClient = this.getLatestPricesCacheClient();
+    if (!cacheClient) {
+      return;
+    }
+
+    void cacheClient.del(this.LATEST_PRICES_REDIS_KEY).catch((error) => {
+      console.warn("Failed to clear latest prices Redis cache:", error);
+    });
   }
 
   async getPendingReviews() {
@@ -467,6 +582,7 @@ export class MarketRateService {
    */
   private async requestRemoteSignaturesAsync(
     multiSigPriceId: number,
+    _memoId: string,
   ): Promise<void> {
     console.info(
       `[MarketRateService] Requesting signatures from ${this.remoteOracleServers.length} remote servers for multi-sig ${multiSigPriceId}`,
@@ -498,67 +614,5 @@ export class MarketRateService {
         );
       }
     });
-  }
-
-  /**
-   * Flush all pending submissions in a single bundled Stellar transaction.
-   */
-  private async flushBatchSubmissions(): Promise<void> {
-    if (this.pendingSubmissions.length === 0) {
-      this.batchTimeout = null;
-      return;
-    }
-
-    const batch = [...this.pendingSubmissions];
-    this.pendingSubmissions = [];
-    this.batchTimeout = null;
-
-    try {
-      // Use BNDL prefix for batched transactions as requested
-      const memoId = this.stellarService.generateMemoId("BNDL");
-
-      console.info(
-        `[MarketRateService] Submitting batch bundle for [${batch
-          .map((i) => i.currency)
-          .join(", ")}]...`,
-      );
-
-      const txHash = await this.stellarService.submitBatchedPriceUpdates(
-        batch.map((item) => ({
-          currency: item.currency,
-          price: item.rate,
-        })),
-        memoId,
-      );
-
-      // Record submission for each item in the batch
-      for (const item of batch) {
-        try {
-          await priceReviewService.markContractSubmitted(
-            item.reviewId,
-            memoId,
-            txHash,
-          );
-        } catch (dbError) {
-          console.error(
-            `[MarketRateService] Failed to mark ${item.currency} as submitted:`,
-            dbError,
-          );
-        }
-      }
-
-      console.info(
-        `[MarketRateService] Batch bundle confirmed for [${batch
-          .map((i) => i.currency)
-          .join(", ")}]. Hash: ${txHash}`,
-      );
-    } catch (error) {
-      console.error(
-        "[MarketRateService] Failed to submit batch bundle:",
-        error,
-      );
-      // Note: In a production environment, you might want to retry individual updates
-      // or put them back in the queue if the failure was transient.
-    }
   }
 }

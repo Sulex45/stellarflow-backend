@@ -27,6 +27,22 @@ TypeScript/Node.js backend for the StellarFlow oracle network. This service fetc
 - PostgreSQL
 - A configured `.env` file with the required Stellar and database secrets
 
+## Automated DB Backups (cron)
+
+This repo includes `scripts/pg_backup.sh`, which runs `pg_dump` to `backups/postgres/` and prunes backups older than 30 days.
+
+- **Run once**: `npm run db:backup` (or `bash scripts/pg_backup.sh`)
+- **Required**: `DATABASE_URL` must be set (the script will also load it from `.env` if present)
+- **Optional**:
+  - `BACKUP_DIR` (default: `backups/postgres`)
+  - `BACKUP_RETENTION_DAYS` (default: `30`)
+
+Example cron (daily at 03:00 UTC):
+
+```bash
+0 3 * * * cd /stellarflow-backend && /usr/bin/env bash scripts/pg_backup.sh >> backups/pg_backup.log 2>&1
+```
+
 ### Installation
 
 ```bash

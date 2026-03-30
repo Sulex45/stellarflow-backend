@@ -1,8 +1,5 @@
-import axios from "axios";
-import { calculateMedian, filterOutliers, calculateWeightedAverage } from "./types";
-import { errorTracker } from "../errorTracker";
-import { webhookService } from "../webhook";
-import { withRetry } from "../../utils/retryUtil.js";
+import axios from 'axios';
+import { validatePrice } from './validation';
 export class GHSRateFetcher {
     coinGeckoUrl = "https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=ghs,usd&include_last_updated_at=true";
     usdToGhsUrl = "https://open.er-api.com/v6/latest/USD";
@@ -20,28 +17,25 @@ export class GHSRateFetcher {
                 },
             }), { maxRetries: 3, retryDelay: 1000 });
             const stellarPrice = coinGeckoResponse.data.stellar;
-            if (stellarPrice &&
-                typeof stellarPrice.ghs === "number" &&
-                stellarPrice.ghs > 0) {
-                const lastUpdatedAt = stellarPrice.last_updated_at
-                    ? new Date(stellarPrice.last_updated_at * 1000)
-                    : new Date();
-                prices.push({
-                    rate: stellarPrice.ghs,
-                    timestamp: lastUpdatedAt,
-                    source: "CoinGecko (direct)",
-                    trustLevel: "standard",
-                });
-                // Success - reset error tracker
-                errorTracker.trackSuccess("GHS-price-fetch");
+            if (!stellarPrice) {
+                throw new Error('CoinGecko did not return a Stellar price payload');
             }
-        }
-        catch (error) {
-            console.debug("CoinGecko direct GHS price failed");
-        }
-        // Strategy 2: CoinGecko XLM/USD + ExchangeRate API
-        try {
-            const coinGeckoResponse = await withRetry(() => axios.get(this.coinGeckoUrl, {
+            const lastUpdatedAt = stellarPrice.last_updated_at
+                ? new Date(stellarPrice.last_updated_at * 1000)
+                : new Date();
+            if (typeof stellarPrice.ghs === 'number') {
+                return {
+                    currency: 'GHS',
+                    rate: validatePrice(stellarPrice.ghs),
+                    timestamp: lastUpdatedAt,
+                    source: 'CoinGecko'
+                };
+            }
+            if (typeof stellarPrice.usd !== 'number') {
+                throw new Error('CoinGecko did not return a usable USD price for Stellar');
+            }
+            const usdPrice = validatePrice(stellarPrice.usd);
+            const exchangeRateResponse = await axios.get(this.usdToGhsUrl, {
                 timeout: 10000,
                 headers: {
                     "User-Agent": "StellarFlow-Oracle/1.0",
@@ -89,50 +83,20 @@ export class GHSRateFetcher {
                 headers: {
                     "User-Agent": "StellarFlow-Oracle/1.0",
                 },
-            }), { maxRetries: 3, retryDelay: 1000 });
-            if (altResponse.data?.stellar?.usd) {
-                const xlmUsd = parseFloat(altResponse.data.stellar.usd);
-                if (!isNaN(xlmUsd) && xlmUsd > 0) {
-                    const ghsResponse = await withRetry(() => axios.get(this.usdToGhsUrl, {
-                        timeout: 10000,
-                        headers: {
-                            "User-Agent": "StellarFlow-Oracle/1.0",
-                        },
-                    }), { maxRetries: 3, retryDelay: 1000 });
-                    const ghsRate = ghsResponse.data.rates?.GHS;
-                    if (ghsResponse.data.result === "success" &&
-                        typeof ghsRate === "number" &&
-                        ghsRate > 0) {
-                        prices.push({
-                            rate: xlmUsd * ghsRate,
-                            timestamp: new Date(),
-                            source: "Alternative XLM pricing",
-                            trustLevel: "new",
-                        });
-                        // Success - reset error tracker
-                        errorTracker.trackSuccess("GHS-price-fetch");
-                    }
-                }
+            });
+            const usdToGhsRate = exchangeRateResponse.data.rates?.GHS;
+            if (exchangeRateResponse.data.result !== 'success' || typeof usdToGhsRate !== 'number') {
+                throw new Error('USD to GHS conversion feed did not return a usable GHS rate');
             }
-        }
-        catch (error) {
-            console.debug("Alternative XLM pricing source failed");
-        }
-        // If we have prices, calculate median
-        if (prices.length > 0) {
-            let rateValues = prices.map((p) => p.rate).filter(p => p > 0);
-            rateValues = filterOutliers(rateValues);
-            const medianRate = calculateMedian(rateValues);
-            const mostRecentTimestamp = prices.reduce((latest, p) => (p.timestamp > latest ? p.timestamp : latest), prices[0]?.timestamp ?? new Date());
-            const weightedRate = calculateWeightedAverage(prices.map((p) => ({
-                value: p.rate,
-                trustLevel: p.trustLevel,
-            })));
+            const validatedUsdToGhsRate = validatePrice(usdToGhsRate);
+            const fxTimestamp = exchangeRateResponse.data.time_last_update_unix
+                ? new Date(exchangeRateResponse.data.time_last_update_unix * 1000)
+                : lastUpdatedAt;
             return {
-                currency: "GHS",
-                rate: weightedRate,
-                timestamp: mostRecentTimestamp,
-                source: `Weighted average of ${prices.length} sources (outliers filtered)`,
+                currency: 'GHS',
+                rate: validatePrice(usdPrice * validatedUsdToGhsRate),
+                timestamp: fxTimestamp > lastUpdatedAt ? fxTimestamp : lastUpdatedAt,
+                source: 'CoinGecko + ExchangeRate API'
             };
         }
         // All strategies failed - track failure and send notification if 3 consecutive failures

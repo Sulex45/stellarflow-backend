@@ -1,30 +1,23 @@
-import express from "express";
 import { createServer } from "http";
+import compression from "compression";
 import cors from "cors";
 import dotenv from "dotenv";
-import morgan from "morgan";
-import helmet from "helmet";
-import { Horizon } from "@stellar/stellar-sdk";
-import swaggerUi from "swagger-ui-express";
-import marketRatesRouter from "./routes/marketRates";
-import historyRouter from "./routes/history";
-import statsRouter from "./routes/stats";
-import intelligenceRouter from "./routes/intelligence";
-import priceUpdatesRouter from "./routes/priceUpdates";
-import assetsRouter from "./routes/assets";
-import statusRouter from "./routes/status";
+import app from "./app";
 import prisma from "./lib/prisma";
+import { disconnectRedis } from "./lib/redis";
 import { initSocket } from "./lib/socket";
 import { SorobanEventListener } from "./services/sorobanEventListener";
-import { specs } from "./lib/swagger";
 import { multiSigSubmissionService } from "./services/multiSigSubmissionService";
-import { apiKeyMiddleware } from "./middleware/apiKeyMiddleware";
-import { rateLimitMiddleware } from "./middleware/rateLimitMiddleware";
 import { validateEnv } from "./utils/envValidator";
+import { enableGlobalLogMasking } from "./utils/logMasker";
 import { hourlyAverageService } from "./services/hourlyAverageService";
+import { metricsMiddleware, metricsEndpoint } from "./middleware/metrics";
 
 // Load environment variables
 dotenv.config();
+
+// Enable log masking to prevent sensitive data leaks
+enableGlobalLogMasking();
 
 // [OPS] Implement "Environment Variable" Check on Start
 validateEnv();
@@ -58,7 +51,6 @@ if (!dashboardUrl) {
   process.exit(1);
 }
 
-const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Horizon server for health checks
@@ -71,6 +63,7 @@ const horizonServer = new Horizon.Server(horizonUrl);
 
 // Middleware
 app.use(morgan("dev"));
+app.use(compression());
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -140,6 +133,10 @@ app.get(
     customSiteTitle: "StellarFlow API Documentation",
   }),
 );
+
+// Expose metrics endpoint early so it's not rate limited, but still want timing
+app.use(metricsMiddleware);
+app.get("/metrics", metricsEndpoint);
 
 // Apply Rate Limiting to all /api routes
 app.use("/api", rateLimitMiddleware);
@@ -272,6 +269,9 @@ app.get("/", (req, res) => {
         cache: "/api/v1/market-rates/cache",
         clearCache: "POST /api/v1/market-rates/cache/clear",
       },
+      system: {
+        metrics: "/metrics",
+      },
       stats: {
         volume: "/api/v1/stats/volume?date=YYYY-MM-DD",
       },
@@ -288,7 +288,7 @@ app.use(
     err: Error,
     req: express.Request,
     res: express.Response,
-    next: express.NextFunction,
+    _next: express.NextFunction,
   ) => {
     console.error("Unhandled error:", err);
     res.status(500).json({
@@ -329,7 +329,7 @@ const closeHttpServer = (): Promise<void> =>
     });
   });
 
-const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+const shutdown = async (signal: "SIGINT" | "SIGTERM"): Promise<void> => {
   if (isShuttingDown) {
     console.log(
       `Shutdown already in progress. Received duplicate ${signal} signal.`,
@@ -350,6 +350,9 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
 
     await prisma.$disconnect();
     console.log("Database connections closed cleanly.");
+
+    await disconnectRedis();
+    console.log("Redis connections closed cleanly.");
 
     process.exit(0);
   } catch (error) {
