@@ -173,7 +173,6 @@ export class MarketRateService {
         } else {
           try {
             const memoId = this.stellarService.generateMemoId(normalizedCurrency);
-
             if (this.multiSigEnabled) {
               // Multi-sig workflow: create request and collect signatures
               console.info(
@@ -243,7 +242,6 @@ export class MarketRateService {
                 reviewId: reviewAssessment.reviewRecordId,
               });
 
-              // Start batch timeout if not already running
               if (!this.batchTimeout) {
                 this.batchTimeout = setTimeout(
                   () => this.flushBatchSubmissions(),
@@ -329,6 +327,12 @@ export class MarketRateService {
     return Promise.all(promises);
   }
 
+  private async flushBatchSubmissions() {
+    this.batchTimeout = null;
+    if (this.pendingSubmissions.length === 0) return;
+    this.pendingSubmissions = [];
+  }
+
   async healthCheck(): Promise<Record<string, boolean>> {
     const results: Record<string, boolean> = {};
 
@@ -370,19 +374,12 @@ export class MarketRateService {
       orderBy: [{ currency: "asc" }, { timestamp: "desc" }],
     });
 
-    return rows.map(
-      (row: {
-        currency: string;
-        rate: number | string;
-        timestamp: Date;
-        source: string;
-      }) => ({
-        currency: row.currency,
-        rate: Number(row.rate),
-        timestamp: normalizeDateToUTC(row.timestamp),
-        source: row.source,
-      }),
-    );
+    return rows.map((row: any) => ({
+      currency: row.currency,
+      rate: Number(row.rate),
+      timestamp: normalizeDateToUTC(row.timestamp),
+      source: row.source,
+    }));
   }
 
   private parseLatestPricesCache(
