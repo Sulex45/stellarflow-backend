@@ -11,6 +11,7 @@ import intelligenceRouter from "./routes/intelligence";
 import priceUpdatesRouter from "./routes/priceUpdates";
 import assetsRouter from "./routes/assets";
 import statusRouter from "./routes/status";
+import adminRouter from "./routes/admin";
 import derivedAssetsRouter from "./routes/derivedAssets";
 import adminRouter from "./routes/admin";
 import { apiKeyMiddleware } from "./middleware/apiKeyMiddleware";
@@ -91,6 +92,7 @@ app.use("/api", rateLimitMiddleware);
 app.use("/api", apiKeyMiddleware);
 app.use("/api/v1", apiKeyMiddleware);
 
+app.use("/api/admin", adminRouter);
 app.use("/api/v1/market-rates", marketRatesRouter);
 app.use("/api/v1/history", historyRouter);
 app.use("/api/v1/stats", statsRouter);
@@ -118,6 +120,9 @@ app.get("/", (req, res) => {
       },
       stats: {
         volume: "/api/v1/stats/volume?date=YYYY-MM-DD",
+      },
+      admin: {
+        lockdown: "POST /api/admin/lockdown",
       },
       history: {
         assetHistory: "/api/v1/history/:asset?range=1d|7d|30d|90d",
