@@ -61,6 +61,21 @@ export class MultiSigSubmissionService {
     console.info("[MultiSigSubmissionService] Stopped");
   }
 
+  restart(newIntervalMs: number): void {
+    if (!this.isRunning) return;
+    if (newIntervalMs === this.pollIntervalMs) return;
+    this.pollIntervalMs = newIntervalMs;
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+    }
+    this.pollTimer = setInterval(() => {
+      this.checkAndSubmitApprovedPrices().catch((err) => {
+        console.error("[MultiSigSubmissionService] Polling error:", err);
+      });
+    }, this.pollIntervalMs);
+    console.info(`[MultiSigSubmissionService] Poll interval updated to ${this.pollIntervalMs}ms`);
+  }
+
   /**
    * Check for approved multi-sig prices and submit them to Stellar.
    * This is the main polling function.

@@ -15,7 +15,7 @@ import { getRedisClient } from "../../lib/redis";
 import type { RedisClientType } from "redis";
 import dotenv from "dotenv";
 import { normalizeDateToUTC } from "../../utils/timeUtils";
-import { isLockdownEnabled } from "../../state/appState";
+import { appConfig } from "../../config/configWatcher";
 
 dotenv.config();
 
@@ -26,7 +26,6 @@ export class MarketRateService {
   private fetchers: Map<string, MarketRateFetcher> = new Map();
   private cache: Map<string, { rate: MarketRate; expiry: Date }> = new Map();
   private stellarService: StellarService;
-  private readonly CACHE_DURATION_MS = 30000; // 30 seconds
   private readonly LATEST_PRICES_REDIS_KEY = "market-rates:latest:v1";
   private readonly LATEST_PRICES_REDIS_TTL_SECONDS = 5;
   private multiSigEnabled: boolean;
@@ -37,7 +36,9 @@ export class MarketRateService {
     reviewId: number;
   }> = [];
   private batchTimeout: any = null;
-  private readonly BATCH_WINDOW_MS = 5000; // 5 seconds bundle window
+
+  private get CACHE_DURATION_MS() { return appConfig.cacheDurationMs; }
+  private get BATCH_WINDOW_MS() { return appConfig.batchWindowMs; }
 
   constructor() {
     this.stellarService = new StellarService();
